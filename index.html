@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Full Party Labels</title>
+
+  <!-- Tailwind CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              purple: '#7c3aed',
+              'purple-light': '#a855f7',
+              'purple-dark': '#5b21b6',
+              teal: '#0d9488',
+              'teal-light': '#2dd4bf',
+              'teal-dark': '#0f766e',
+            }
+          },
+          fontFamily: {
+            display: ['"Syne"', 'sans-serif'],
+            body: ['"DM Sans"', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+
+<body class="bg-gray-950 text-gray-100 font-body min-h-screen flex flex-col">
+
+  <!-- ══ HEADER ══════════════════════════════════════════════════════════ -->
+  <header class="header-bar px-6 py-4 flex items-center justify-between border-b border-white/10">
+    <div class="flex items-center gap-3">
+      <div class="logo-badge">
+        <span class="text-lg">🎉</span>
+      </div>
+      <div>
+        <h1 class="font-display text-xl font-bold text-white tracking-tight leading-none">
+          Full Party <span class="text-brand-purple-light">Labels</span>
+        </h1>
+        <p class="text-xs text-purple-200 mt-0.5">Uruapan, Michoacán · Brother QL-800</p>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-3">
+      <!-- Users online badge -->
+      <button id="btn-users" class="users-badge" title="Ver usuarios conectados">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
+        </svg>
+        <span id="users-count">0</span> conectado(s)
+      </button>
+
+      <!-- Status indicator -->
+      <div id="status-badge" class="status-badge status-connecting">
+        <span class="status-dot"></span>
+        <span id="status-text">Conectando...</span>
+      </div>
+
+      <!-- Search -->
+      <div class="relative">
+        <input
+          id="search-input"
+          type="text"
+          placeholder="Buscar producto..."
+          class="search-input pl-9 pr-4 py-2 text-sm rounded-lg w-52 focus:w-72 transition-all"
+        />
+        <svg class="absolute left-2.5 top-2.5 w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0"/>
+        </svg>
+      </div>
+    </div>
+  </header>
+
+  <!-- ══ USERS PANEL (dropdown) ══════════════════════════════════════════ -->
+  <div id="users-panel" class="users-panel hidden">
+    <div class="users-panel-header">
+      <span class="font-display font-bold text-sm text-purple-700">Usuarios Conectados</span>
+      <button id="btn-close-users" class="text-gray-400 hover:text-gray-600">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+    <div id="users-list" class="users-list">
+      <p class="text-xs text-gray-400 text-center py-3">Cargando...</p>
+    </div>
+    <p class="text-xs text-gray-400 mt-2 px-1">Se actualiza cada 15 segundos</p>
+  </div>
+
+  <!-- ══ MAIN LAYOUT ══════════════════════════════════════════════════════ -->
+  <main class="flex flex-1 overflow-hidden">
+
+    <!-- ── SIDEBAR FORM ──────────────────────────────────────────────── -->
+    <aside class="sidebar w-80 flex-shrink-0 flex flex-col border-r border-white/10">
+
+      <div class="p-5 flex-1 overflow-y-auto">
+        <h2 class="font-display text-sm font-bold uppercase tracking-widest text-purple-400 mb-4">
+          Nuevo Producto
+        </h2>
+
+        <!-- Form -->
+        <div class="space-y-4">
+
+          <!-- SKU -->
+          <div class="field-group">
+            <label for="input-sku" class="field-label">
+              SKU / EAN-13
+              <span class="field-hint">Vacío = auto-generado</span>
+            </label>
+            <input
+              id="input-sku"
+              type="text"
+              placeholder="0000000000000"
+              maxlength="13"
+              class="field-input font-mono"
+              autocomplete="off"
+            />
+          </div>
+
+          <!-- Nombre -->
+          <div class="field-group">
+            <label for="input-name" class="field-label">Nombre del Producto</label>
+            <input
+              id="input-name"
+              type="text"
+              placeholder="Ej: Globo Metalizado Dorado"
+              maxlength="80"
+              class="field-input"
+              autocomplete="off"
+            />
+          </div>
+
+          <!-- Precio -->
+          <div class="field-group">
+            <label for="input-price" class="field-label">Precio (MXN)</label>
+            <div class="relative">
+              <span class="absolute left-3 top-2.5 text-gray-500 text-sm">$</span>
+              <input
+                id="input-price"
+                type="number"
+                placeholder="0.00"
+                min="0"
+                step="0.01"
+                class="field-input pl-7"
+                autocomplete="off"
+              />
+            </div>
+          </div>
+
+          <!-- Submit -->
+          <button id="btn-save" class="btn-primary w-full mt-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+            <span>Guardar Producto</span>
+          </button>
+
+        </div>
+
+        <!-- Edit mode banner -->
+        <div id="edit-banner" class="edit-banner hidden mt-4">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-semibold text-amber-400">✏️ Modo edición</span>
+            <button id="btn-cancel-edit" class="text-xs text-gray-400 hover:text-white underline">Cancelar</button>
+          </div>
+          <p id="edit-sku-display" class="font-mono text-xs text-gray-500 mt-1"></p>
+        </div>
+
+        <!-- Divider -->
+        <hr class="border-purple-100 my-5" />
+
+        <!-- Import / Export -->
+        <h2 class="font-display text-sm font-bold uppercase tracking-widest text-purple-400 mb-3">
+          Importar / Exportar
+        </h2>
+
+        <!-- Export CSV -->
+        <button id="btn-export" class="btn-export w-full mb-2">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+          </svg>
+          <span>Descargar CSV</span>
+        </button>
+
+        <!-- Import file -->
+        <label class="btn-import w-full cursor-pointer">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+          </svg>
+          <span>Subir CSV / Excel</span>
+          <input id="file-import" type="file" accept=".csv,.xlsx,.xls" class="hidden" />
+        </label>
+
+        <p class="text-xs text-purple-400 mt-2 leading-relaxed">
+          El CSV debe tener columnas: <span class="font-mono font-semibold">sku, name, price</span>.<br/>
+          SKU vacío = auto-generado. SKUs duplicados se omiten.
+        </p>
+
+        <!-- Import result panel -->
+        <div id="import-result" class="hidden mt-3 p-3 rounded-lg bg-purple-50 border border-purple-200 text-xs">
+        </div>
+
+        <!-- Divider -->
+        <hr class="border-purple-100 my-5" />
+
+        <!-- Stats -->
+        <div class="grid grid-cols-2 gap-3">
+          <div class="stat-card">
+            <p class="stat-label">Productos</p>
+            <p id="stat-total" class="stat-value text-purple-700">0</p>
+          </div>
+          <div class="stat-card">
+            <p class="stat-label">Último SKU</p>
+            <p id="stat-last-sku" class="stat-value font-mono text-teal-700 text-xs truncate">—</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Batch print footer -->
+      <div class="p-4 border-t border-purple-100 bg-purple-50">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs text-purple-500">Seleccionados: <span id="selected-count" class="text-purple-700 font-semibold">0</span></span>
+          <button id="btn-clear-selection" class="text-xs text-purple-400 hover:text-purple-700">Limpiar</button>
+        </div>
+        <button id="btn-batch-print" class="btn-teal w-full" disabled>
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/>
+          </svg>
+          <span>Imprimir Selección</span>
+        </button>
+      </div>
+
+    </aside>
+
+    <!-- ── PRODUCTS TABLE ────────────────────────────────────────────── -->
+    <section class="flex-1 flex flex-col overflow-hidden">
+
+      <!-- Table toolbar -->
+      <div class="px-6 py-3 border-b border-purple-100 flex items-center justify-between bg-purple-50">
+        <div class="flex items-center gap-2">
+          <input id="select-all" type="checkbox" class="checkbox-custom" title="Seleccionar todos"/>
+          <span class="text-sm text-purple-500">
+            <span id="visible-count">0</span> productos
+          </span>
+        </div>
+        <button id="btn-refresh" class="icon-btn" title="Recargar">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Table -->
+      <div class="flex-1 overflow-y-auto">
+        <table class="w-full text-sm">
+          <thead class="sticky top-0 z-10">
+            <tr class="table-header">
+              <th class="w-10 px-3 py-3"></th>
+              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-purple-500">SKU</th>
+              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-purple-500">Nombre</th>
+              <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-purple-500">Precio</th>
+              <th class="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider text-purple-500">Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="products-tbody">
+            <!-- Rows injected by JS -->
+          </tbody>
+        </table>
+
+        <!-- Empty state -->
+        <div id="empty-state" class="hidden flex-col items-center justify-center py-20 text-center">
+          <div class="text-5xl mb-4">🎈</div>
+          <p class="font-display text-lg text-purple-400">Sin productos aún</p>
+          <p class="text-sm text-purple-300 mt-1">Agrega tu primer artículo en el panel izquierdo</p>
+        </div>
+
+        <!-- Loading state -->
+        <div id="loading-state" class="flex flex-col items-center justify-center py-20">
+          <div class="spinner mb-4"></div>
+          <p class="text-sm text-purple-400">Cargando inventario...</p>
+        </div>
+      </div>
+
+    </section>
+  </main>
+
+  <!-- ══ TOAST NOTIFICATION ══════════════════════════════════════════════ -->
+  <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+  <!-- ══ PRINT MODAL ══════════════════════════════════════════════════════ -->
+  <div id="print-modal-overlay" class="modal-overlay hidden">
+    <div class="modal-box">
+
+      <!-- Header -->
+      <div class="modal-header">
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center">
+            <svg class="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/>
+            </svg>
+          </div>
+          <h3 id="modal-print-title" class="font-display font-bold text-purple-800 text-sm">Imprimir etiqueta</h3>
+        </div>
+        <button onclick="closePrintModal()" class="text-gray-400 hover:text-gray-600 transition-colors">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Body -->
+      <div class="modal-body">
+
+        <!-- 1. Nombre de tienda -->
+        <div class="modal-field">
+          <div class="modal-field-header">
+            <label class="modal-label">Nombre de la tienda</label>
+            <label class="toggle-label">
+              <input id="modal-store-check" type="checkbox" checked />
+              <span class="toggle-text">Imprimir</span>
+            </label>
+          </div>
+          <input id="modal-store-name" type="text" class="modal-input"
+            placeholder="Ej. Full Party Uruapan"
+            onkeydown="if(event.key==='Enter') confirmPrint()" />
+        </div>
+
+        <!-- Divider -->
+        <div class="modal-divider"></div>
+
+        <!-- 2. Con/Sin precio -->
+        <div class="modal-field">
+          <div class="modal-field-header">
+            <label class="modal-label">Precio</label>
+            <label class="toggle-label">
+              <input id="modal-price-check" type="checkbox" checked />
+              <span class="toggle-text">Imprimir</span>
+            </label>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Footer -->
+      <div class="modal-footer">
+        <button onclick="closePrintModal()" class="btn-ghost">Cancelar</button>
+        <button onclick="confirmPrint()" class="btn-primary">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/>
+          </svg>
+          Imprimir
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ══ SCRIPTS ══════════════════════════════════════════════════════════ -->
+  <script src="js/app.js"></script>
+</body>
+</html>

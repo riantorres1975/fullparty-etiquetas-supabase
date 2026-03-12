@@ -1,0 +1,47 @@
+{
+  "name": "fullparty-labels",
+  "version": "2.0.0",
+  "description": "Sistema de etiquetas para Full Party - Uruapan, Michoacán",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "build": "electron-builder --win --x64",
+    "build:dir": "electron-builder --win --x64 --dir"
+  },
+  "build": {
+    "appId": "mx.fullparty.labels",
+    "productName": "Full Party Labels",
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerLanguages": ["es_MX"],
+      "language": "3082"
+    },
+    "extraResources": [
+      {
+        "from": "dist/servidor_etiquetas.exe",
+        "to": "servidor_etiquetas.exe"
+      },
+      {
+        "from": ".env",
+        "to": ".env"
+      }
+    ],
+    "files": [
+      "main.js",
+      "index.html",
+      "css/**",
+      "js/**",
+      "assets/**"
+    ]
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.0.0"
+  }
+}
