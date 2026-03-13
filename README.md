@@ -46,13 +46,12 @@ fullparty-etiquetas/
 
 ### Cuenta Supabase
 - Proyecto creado en https://supabase.com
-- Las tablas se crean automáticamente al arrancar (ver abajo)
 
 ---
 
 ## 🗄️ Tablas en Supabase
 
-Antes de arrancar por primera vez, crear estas tablas en el **SQL Editor** de Supabase:
+Crear estas tablas en el **SQL Editor** de Supabase antes de arrancar:
 
 ```sql
 CREATE TABLE IF NOT EXISTS products (
@@ -87,7 +86,7 @@ cd fullparty-etiquetas-supabase
 copy .env.example .env
 ```
 
-Editar `.env` con tus credenciales de Supabase:
+Editar `.env` con las credenciales de Supabase:
 
 ```env
 DATABASE_URL=postgresql://postgres.XXXXXXXX:TU_PASSWORD@aws-0-us-west-2.pooler.supabase.com:5432/postgres
@@ -131,9 +130,11 @@ npm start
 - ✅ **Impresión batch** — Seleccionar múltiples productos e imprimir juntos
 - ✅ **Importar/Exportar CSV y Excel** — Para carga masiva de productos
 - ✅ **Búsqueda en tiempo real** — Filtro instantáneo por nombre o SKU
-- ✅ **Usuarios conectados** — Muestra sesiones activas con IP pública real
-- ✅ **Presencia en Supabase** — Funciona entre PCs fuera de la red local
-- ✅ **Auto-refresh** — Los productos se sincronizan cada 10 segundos
+- ✅ **Paginación** — 50 productos por página, tabla de altura fija
+- ✅ **Usuarios conectados** — Sesiones activas con IP pública real via Supabase
+- ✅ **Auto-refresh** — Productos sincronizados cada 10 segundos
+- ✅ **Modo offline** — Guarda cambios localmente y sincroniza al reconectar
+- ✅ **Reconexión automática** — Detecta silenciosamente cuando vuelve el internet
 
 ---
 
@@ -147,7 +148,7 @@ Remove-Item -Recurse -Force build -ErrorAction SilentlyContinue
 Remove-Item -Force servidor_etiquetas.spec -ErrorAction SilentlyContinue
 ```
 
-### Paso 2 — Instalar PyInstaller y dependencias
+### Paso 2 — Instalar PyInstaller
 
 ```powershell
 py -3.13 -m pip install pyinstaller python-multipart
@@ -166,7 +167,7 @@ Copy-Item .env backend\.env
 backend\servidor_etiquetas.exe
 ```
 
-Debe mostrar `Application startup complete.` Si hay error de puerto ocupado es normal, significa que ya hay una instancia corriendo.
+Debe mostrar `Application startup complete.`
 
 ### Paso 5 — Generar el instalador
 
@@ -182,11 +183,25 @@ El instalador queda en `dist\Full Party Labels Setup 2.0.0.exe`
 ## 💻 Instalar en otra PC
 
 1. Copiar `dist\Full Party Labels Setup 2.0.0.exe` a la otra PC e instalar
-2. Después de instalar, copiar el archivo `.env` a:
+2. Copiar el archivo `.env` a:
    ```
    C:\Program Files\Full Party Labels\resources\.env
    ```
 3. Abrir la app — se conecta automáticamente a Supabase
+
+---
+
+## 📤 Subir cambios a GitHub
+
+```powershell
+git add .
+git commit -m "descripcion del cambio"
+git push
+```
+
+> El archivo `.env` nunca se sube — está en `.gitignore`.  
+> La carpeta `node_modules` tampoco se sube — está en `.gitignore`.  
+> Si es el primer push: `git push --set-upstream origin main`
 
 ---
 
@@ -211,9 +226,10 @@ El instalador queda en `dist\Full Party Labels Setup 2.0.0.exe`
 ## ⚠️ Notas importantes
 
 - Usar siempre **Python 3.13** — Python 3.14 rompe PyInstaller y FastAPI
-- El `.env` **nunca se sube a GitHub** — está en `.gitignore`
+- El `.env` **nunca se sube a GitHub**
 - Al instalar en una PC nueva, copiar `.env` manualmente a `resources\`
-- La tabla `presence` en Supabase permite ver usuarios conectados desde cualquier lugar
+- La tabla `presence` en Supabase permite ver usuarios desde cualquier lugar
+- El modo offline guarda hasta 100 operaciones en cola local
 
 ---
 
