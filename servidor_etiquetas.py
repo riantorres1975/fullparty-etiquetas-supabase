@@ -54,13 +54,23 @@ class Product(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
-_presence: dict = {}
+class Presence(Base):
+    __tablename__ = "presence"
+    session_id = Column(String(36), primary_key=True)
+    ip         = Column(String(45), nullable=False)
+    last_seen  = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
 PRESENCE_TTL = 30
 
 def cleanup_presence():
-    now = time.time()
-    for sid in [s for s, d in list(_presence.items()) if now - d["last_seen"] > PRESENCE_TTL]:
-        _presence.pop(sid, None)
+    db = SessionLocal()
+    try:
+        cutoff = time.time() - PRESENCE_TTL
+        from sqlalchemy import text
+        db.execute(text("DELETE FROM presence WHERE last_seen < NOW() - INTERVAL '30 seconds'"))
+        db.commit()
+    except: db.rollback()
+    finally: db.close()
 
 
 class ProductCreate(BaseModel):
@@ -114,6 +124,7 @@ def generate_ean13() -> str:
     digits.append(check)
     return "".join(map(str, digits))
 
+
 def build_label_pdf(sku: str, name: str, price: float,
                     show_price: bool = True,
                     show_store: bool = False,
@@ -143,11 +154,11 @@ def build_label_pdf(sku: str, name: str, price: float,
     try:
         barcode = eanbc.Ean13BarcodeWidget(sku)
         
-        # Validar si no hay tienda ni precio para hacerlo más grande
+        # Lógica de código gigante
         if not show_store and not show_price:
-            barcode.barHeight = 16 * mm  # Aumentamos la altura de las barras (antes 10)
-            barcode.barWidth  = 0.9      # Hacemos las barras ligeramente más anchas (antes 0.7)
-            barcode.fontSize  = 8        # Letra de los números más grande (antes 6)
+            barcode.barHeight = 16 * mm
+            barcode.barWidth  = 0.9
+            barcode.fontSize  = 8
         else:
             barcode.barHeight = 10 * mm
             barcode.barWidth  = 0.7
@@ -159,15 +170,11 @@ def build_label_pdf(sku: str, name: str, price: float,
         bw = bounds[2] - bounds[0]
         bh = bounds[3] - bounds[1]
         
-        # Calcular la posición Y para centrarlo dependiendo de si hay precio o no
         if not show_price:
-            # Lo centramos entre el nombre del producto y el borde inferior de la etiqueta
             y_pos = (y_name - bh) / 2 - bounds[1] 
         else:
-            # Posición original si sí se imprime el precio
             y_pos = (HEIGHT - 5 * mm - bh) / 2 - bounds[1] + 1 * mm
 
-        # Dibujar el código
         renderPDF.draw(d, c, (WIDTH - bw) / 2 - bounds[0], y_pos)
         
     except Exception as e:
@@ -177,12 +184,13 @@ def build_label_pdf(sku: str, name: str, price: float,
 
     # Precio
     if show_price:
-        c.setFont("Helvetica-Bold", 10)
+        c.setFont("Helvetica-Bold", 11)
         c.setFillColor(colors.black)
         c.drawCentredString(WIDTH / 2, 4 * mm, f"${price:,.2f} MXN")
 
     c.save(); buffer.seek(0)
     return buffer.read()
+
 
 # ═══ ENDPOINTS ════════════════════════════════════════════════════════════════
 # REGLA: rutas fijas ANTES que rutas con {product_id}
@@ -198,18 +206,47 @@ async def heartbeat(request: Request):
     if request.headers.get("content-type", "").startswith("application/json"):
         body = await request.json()
     sid = body.get("session_id") or str(uuid.uuid4())
-    _presence[sid] = {"ip": ip, "last_seen": time.time()}
-    cleanup_presence()
-    return {"session_id": sid, "online": len(_presence)}
+    if body.get("client_ip"):
+        ip = body["client_ip"]
+
+    db = SessionLocal()
+    try:
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+        stmt = pg_insert(Presence).values(session_id=sid, ip=ip, last_seen=func.now())
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["session_id"],
+            set_={"ip": ip, "last_seen": func.now()}
+        )
+        db.execute(stmt)
+        db.commit()
+        cleanup_presence()
+        count = db.query(Presence).count()
+    except Exception as e:
+        db.rollback()
+        log.warning(f"Heartbeat error: {e}")
+        count = 1
+    finally:
+        db.close()
+
+    return {"session_id": sid, "online": count}
 
 @app.get("/presence/users")
 def get_users():
     cleanup_presence()
-    now = time.time()
-    return {"count": len(_presence), "users": [
-        {"session_id": sid, "ip": d["ip"], "last_seen": int(now - d["last_seen"])}
-        for sid, d in sorted(_presence.items(), key=lambda x: x[1]["last_seen"], reverse=True)
-    ]}
+    db = SessionLocal()
+    try:
+        from sqlalchemy import text
+        rows = db.execute(text(
+            "SELECT session_id, ip, EXTRACT(EPOCH FROM (NOW() - last_seen))::int AS last_seen "
+            "FROM presence ORDER BY last_seen ASC"
+        )).fetchall()
+        users = [{"session_id": r[0], "ip": r[1], "last_seen": r[2]} for r in rows]
+        return {"count": len(users), "users": users}
+    except Exception as e:
+        log.warning(f"get_users error: {e}")
+        return {"count": 0, "users": []}
+    finally:
+        db.close()
 
 @app.get("/products", response_model=list[ProductOut])
 def list_products():
@@ -252,36 +289,46 @@ def batch_labels(req: BatchRequest):
         c = canvas.Canvas(buffer, pagesize=(WIDTH, HEIGHT))
         for i, p in enumerate(products):
             if i > 0: c.showPage()
-            pdf_bytes = build_label_pdf(p.sku, p.name, float(p.price),
-                                        show_price=req.show_price,
-                                        show_store=req.show_store,
-                                        store_name=req.store_name)
-            # Re-renderizar en el canvas multipage usando el PDF individual como fuente
-            from reportlab.pdfgen import canvas as rl_canvas
-            # Dibujar directamente (reusar la lógica inline)
+            
+            # --- Lógica de renderizado actualizada ---
             c.setFillColor(colors.white); c.rect(0, 0, WIDTH, HEIGHT, fill=1, stroke=0)
-            y_name = HEIGHT - 5 * mm
+            
+            y_name = HEIGHT - 7 * mm
             if req.show_store and req.store_name:
-                c.setFont("Helvetica", 5.5); c.setFillColor(colors.black)
-                c.drawCentredString(WIDTH / 2, HEIGHT - 3.5 * mm, req.store_name.upper())
-                y_name = HEIGHT - 7 * mm
+                c.setFont("Helvetica-Bold", 8); c.setFillColor(colors.black)
+                c.drawCentredString(WIDTH / 2, HEIGHT - 5.5 * mm, req.store_name.upper())
+                y_name = HEIGHT - 9.5 * mm
+                
             c.setFont("Helvetica-Bold", 7); c.setFillColor(colors.black)
             dn = p.name if len(p.name) <= 32 else p.name[:31] + "..."
             c.drawCentredString(WIDTH / 2, y_name, dn)
+            
             try:
                 bc = eanbc.Ean13BarcodeWidget(p.sku)
-                bc.barHeight = 10 * mm; bc.barWidth = 0.7
-                bc.fontSize = 6; bc.humanReadable = True
+                if not req.show_store and not req.show_price:
+                    bc.barHeight = 16 * mm; bc.barWidth = 0.9; bc.fontSize = 8
+                else:
+                    bc.barHeight = 10 * mm; bc.barWidth = 0.7; bc.fontSize = 6
+                
+                bc.humanReadable = True
                 d = Drawing(); d.add(bc)
                 b = d.getBounds()
                 bw = b[2]-b[0]; bh = b[3]-b[1]
-                renderPDF.draw(d, c, (WIDTH-bw)/2-b[0], (HEIGHT-5*mm-bh)/2-b[1]+1*mm)
+                
+                if not req.show_price:
+                    y_pos = (y_name - bh) / 2 - b[1]
+                else:
+                    y_pos = (HEIGHT - 5 * mm - bh) / 2 - b[1] + 1 * mm
+                    
+                renderPDF.draw(d, c, (WIDTH-bw)/2-b[0], y_pos)
             except Exception as e:
                 log.warning(f"Barcode fallback '{p.sku}': {e}")
                 c.setFont("Courier-Bold", 8); c.drawCentredString(WIDTH/2, HEIGHT/2, p.sku)
+                
             if req.show_price:
                 c.setFont("Helvetica-Bold", 8); c.setFillColor(colors.black)
                 c.drawCentredString(WIDTH/2, 4*mm, f"${float(p.price):,.2f} MXN")
+                
         c.save(); buffer.seek(0)
         return StreamingResponse(buffer, media_type="application/pdf",
                                  headers={"Content-Disposition": "inline; filename=batch.pdf"})

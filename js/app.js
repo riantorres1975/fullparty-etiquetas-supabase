@@ -742,16 +742,46 @@ function loadSheetJS() {
 
 // ── Presence system ───────────────────────────────────────────────────────────
 const HEARTBEAT_INTERVAL = 15000;
+const PRODUCTS_POLL_INTERVAL = 10000; // recargar productos cada 10s
+
+// Detectar IP pública
+async function getLocalIP() {
+  try {
+    const res = await fetch("https://api.ipify.org?format=json");
+    const data = await res.json();
+    return data.ip || null;
+  } catch (_) {
+    // Fallback: IP local si no hay internet
+    try {
+      if (typeof require !== "undefined") {
+        const os = require("os");
+        const interfaces = os.networkInterfaces();
+        for (const name of Object.keys(interfaces)) {
+          for (const iface of interfaces[name]) {
+            if (iface.family === "IPv4" && !iface.internal) {
+              return iface.address;
+            }
+          }
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+}
 let sessionId = null;
 let usersPanelOpen = false;
 
 async function sendHeartbeat() {
   if (!state.backendOnline) return;
   try {
+    const localIP = await getLocalIP();
+    const body = { session_id: sessionId };
+    if (localIP) body.client_ip = localIP;
+
     const res = await fetch(`${API}/presence/heartbeat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: sessionId }),
+      body: JSON.stringify(body),
     });
     const data = await res.json();
     sessionId = data.session_id;
@@ -811,6 +841,8 @@ function toggleUsersPanel() {
 function startHeartbeat() {
   sendHeartbeat();
   setInterval(sendHeartbeat, HEARTBEAT_INTERVAL);
+  // Recargar productos automáticamente cada 10s para ver cambios de otras PCs
+  setInterval(() => loadProducts(true), PRODUCTS_POLL_INTERVAL);
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
