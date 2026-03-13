@@ -7,15 +7,79 @@
 const API = "http://127.0.0.1:8000";
 const RETRY_INTERVAL = 3000;
 const DELETE_CONFIRM_SECS = 3;
+const PAGE_SIZE = 50; // productos por página
+
+// ── Cola offline ──────────────────────────────────────────────────────────────
+const OFFLINE_QUEUE_KEY = "fullparty_offline_queue";
+
+function getOfflineQueue() {
+  try { return JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY) || "[]"); }
+  catch { return []; }
+}
+
+function saveOfflineQueue(queue) {
+  localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
+}
+
+function enqueueOffline(op) {
+  const queue = getOfflineQueue();
+  queue.push({ ...op, timestamp: Date.now() });
+  saveOfflineQueue(queue);
+  showToast("Sin conexión — cambio guardado localmente", "warning");
+}
+
+async function flushOfflineQueue() {
+  const queue = getOfflineQueue();
+  if (queue.length === 0) return;
+
+  let flushed = 0;
+  const remaining = [];
+
+  for (const op of queue) {
+    try {
+      if (op.type === "create") {
+        await apiFetch("/products", {
+          method: "POST",
+          body: JSON.stringify(op.data),
+        });
+        flushed++;
+      } else if (op.type === "delete") {
+        await apiFetch(`/products/${op.id}`, { method: "DELETE" });
+        flushed++;
+      } else if (op.type === "update") {
+        await apiFetch(`/products/${op.id}`, {
+          method: "PUT",
+          body: JSON.stringify(op.data),
+        });
+        flushed++;
+      }
+    } catch {
+      remaining.push(op);
+    }
+  }
+
+  saveOfflineQueue(remaining);
+
+  if (flushed > 0) {
+    showToast(`${flushed} cambio(s) offline sincronizados ✓`, "success");
+    await loadProducts(true);
+  }
+}
+
+function getOfflineBadge() {
+  const q = getOfflineQueue();
+  return q.length;
+}
 
 // ── Estado global ────────────────────────────────────────────────────────────
 const state = {
-  products: [],       // Lista completa desde API
-  filtered: [],       // Lista filtrada por búsqueda
-  editingId: null,    // ID del producto en edición
-  selected: new Set(),// IDs seleccionados para batch print
-  deleteTimers: {},   // Timers del smart-delete por producto ID
+  products: [],
+  filtered: [],
+  editingId: null,
+  selected: new Set(),
+  deleteTimers: {},
   backendOnline: false,
+  page: 1,          // página actual
 };
 
 // ── Referencias DOM ──────────────────────────────────────────────────────────
@@ -88,11 +152,14 @@ async function apiFetch(path, options = {}) {
 // ── Verificar backend ────────────────────────────────────────────────────────
 async function checkBackend() {
   try {
-    await apiFetch("/health");
-    setStatus("online", "Supabase conectado");
-    return true;
+    const res = await fetch(`${API}/health`);
+    if (!res.ok) return false;
+    const data = await res.json();
+    // El backend responde — pero ¿tiene conexión a Supabase?
+    // Intentamos hacer una query real (listar productos con limit 1)
+    const test = await fetch(`${API}/products`);
+    return test.ok;
   } catch {
-    setStatus("offline", "Sin conexión");
     return false;
   }
 }
@@ -101,13 +168,36 @@ async function waitForBackend() {
   setStatus("connecting", "Conectando...");
   const ok = await checkBackend();
   if (ok) {
-    loadProducts();
-    return Promise.resolve();
+    setStatus("online", "Supabase conectado");
+    await flushOfflineQueue();
+    await loadProducts();
   } else {
-    return new Promise((resolve) => {
-      setTimeout(() => waitForBackend().then(resolve), RETRY_INTERVAL);
-    });
+    // Sin conexión: cargar caché
+    const cached = localStorage.getItem("fullparty_products_cache");
+    if (cached && state.products.length === 0) {
+      try {
+        state.products = JSON.parse(cached);
+        applyFilter();
+        updateStats();
+      } catch {}
+    }
+    const q = getOfflineBadge();
+    setStatus("offline", q > 0 ? `Sin conexión (${q} pendiente${q > 1 ? "s" : ""})` : "Sin conexión");
   }
+}
+
+// Reconexión silenciosa — solo actúa cuando cambia el estado
+async function reconnectLoop() {
+  if (state.backendOnline) return;
+
+  const ok = await checkBackend();
+  if (ok) {
+    setStatus("online", "Supabase conectado");
+    await flushOfflineQueue();
+    const loaded = await loadProducts();
+    if (loaded) showToast("Conexión restablecida ✓", "success");
+  }
+  // Si sigue sin conexión: silencio total
 }
 
 // ── Load products ────────────────────────────────────────────────────────────
@@ -120,18 +210,24 @@ async function loadProducts(silent = false) {
   try {
     const res = await apiFetch("/products");
     state.products = await res.json();
+    localStorage.setItem("fullparty_products_cache", JSON.stringify(state.products));
     applyFilter();
     updateStats();
+    return true;
   } catch (e) {
-    showToast(`Error al cargar productos: ${e.message}`, "error");
-    setStatus("offline", "Sin conexión");
+    if (state.backendOnline) {
+      showToast(`Error al cargar productos: ${e.message}`, "error");
+      const q = getOfflineBadge();
+      setStatus("offline", q > 0 ? `Sin conexión (${q} pendiente${q > 1 ? "s" : ""})` : "Sin conexión");
+    }
+    return false;
   } finally {
     els.loadingState.style.display = "none";
   }
 }
 
 // ── Filter / Render ──────────────────────────────────────────────────────────
-function applyFilter() {
+function applyFilter(resetPage = true) {
   const q = els.searchInput.value.trim().toLowerCase();
   state.filtered = q
     ? state.products.filter(
@@ -142,35 +238,67 @@ function applyFilter() {
       )
     : [...state.products];
 
+  if (resetPage) state.page = 1;
   renderTable();
 }
 
 function renderTable(newId = null) {
-  const rows = state.filtered.map((p) => buildRow(p, p.id === newId)).join("");
+  const totalPages = Math.max(1, Math.ceil(state.filtered.length / PAGE_SIZE));
+  if (state.page > totalPages) state.page = totalPages;
+
+  const start = (state.page - 1) * PAGE_SIZE;
+  const paginated = state.filtered.slice(start, start + PAGE_SIZE);
+
+  const rows = paginated.map((p) => buildRow(p, p.id === newId)).join("");
   els.tbody.innerHTML = rows;
 
-  // Re-attach event listeners
   els.tbody.querySelectorAll("[data-action]").forEach((btn) => {
     btn.addEventListener("click", handleTableAction);
   });
-
   els.tbody.querySelectorAll(".row-checkbox").forEach((cb) => {
     cb.addEventListener("change", handleRowCheck);
     cb.checked = state.selected.has(Number(cb.dataset.id));
   });
 
-  // Update visible count
   els.visibleCount.textContent = state.filtered.length;
 
-  // Empty state
   if (state.filtered.length === 0) {
     els.emptyState.classList.add("visible");
   } else {
     els.emptyState.classList.remove("visible");
   }
 
-  // Select-all state
   updateSelectAllState();
+  renderPagination(totalPages);
+}
+
+function renderPagination(totalPages) {
+  let el = $("pagination-bar");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "pagination-bar";
+    el.className = "pagination-bar";
+    // Insertar debajo del tbody
+    const tableWrapper = els.tbody.closest(".flex-1");
+    tableWrapper.appendChild(el);
+  }
+
+  if (totalPages <= 1) { el.innerHTML = ""; return; }
+
+  const prev = state.page > 1;
+  const next = state.page < totalPages;
+
+  el.innerHTML = `
+    <button class="page-btn" ${prev ? "" : "disabled"} onclick="changePage(${state.page - 1})">‹ Anterior</button>
+    <span class="page-info">Página ${state.page} de ${totalPages} <span class="page-total">(${state.filtered.length} productos)</span></span>
+    <button class="page-btn" ${next ? "" : "disabled"} onclick="changePage(${state.page + 1})">Siguiente ›</button>
+  `;
+}
+
+function changePage(p) {
+  state.page = p;
+  renderTable();
+  els.tbody.closest(".flex-1").scrollTo({ top: 0, behavior: "smooth" });
 }
 
 function buildRow(p, isNew = false) {
@@ -268,6 +396,23 @@ function handleSmartDelete(btn, id) {
 }
 
 async function deleteProduct(id) {
+  // Si es un producto temporal offline, solo eliminarlo de la lista local
+  if (id < 0) {
+    state.products = state.products.filter((p) => p.id !== id);
+    state.selected.delete(id);
+    applyFilter(); updateStats(); updateBatchUI();
+    showToast("Producto pendiente eliminado", "success");
+    return;
+  }
+
+  if (!state.backendOnline) {
+    enqueueOffline({ type: "delete", id });
+    state.products = state.products.filter((p) => p.id !== id);
+    state.selected.delete(id);
+    applyFilter(); updateStats(); updateBatchUI();
+    return;
+  }
+
   try {
     await apiFetch(`/products/${id}`, { method: "DELETE" });
     state.products = state.products.filter((p) => p.id !== id);
@@ -295,6 +440,13 @@ async function saveProduct() {
   try {
     if (state.editingId !== null) {
       // UPDATE
+      if (!state.backendOnline) {
+        enqueueOffline({ type: "update", id: state.editingId, data: { name, price } });
+        const idx = state.products.findIndex((p) => p.id === state.editingId);
+        if (idx !== -1) state.products[idx] = { ...state.products[idx], name, price };
+        cancelEdit(); applyFilter(); updateStats();
+        return;
+      }
       const res = await apiFetch(`/products/${state.editingId}`, {
         method: "PUT",
         body: JSON.stringify({ name, price }),
@@ -309,12 +461,21 @@ async function saveProduct() {
       const body = { name, price };
       if (sku) body.sku = sku;
 
+      if (!state.backendOnline) {
+        enqueueOffline({ type: "create", data: body });
+        // Mostrar localmente con ID temporal negativo
+        const tmp = { id: -(Date.now()), sku: sku || "PENDIENTE", name: name.trim(), price };
+        state.products.unshift(tmp);
+        clearForm(); applyFilter(); updateStats();
+        return;
+      }
+
       const res = await apiFetch("/products", {
         method: "POST",
         body: JSON.stringify(body),
       });
       const created = await res.json();
-      state.products.unshift(created); // Más recientes primero
+      state.products.unshift(created);
       showToast(`"${created.name}" guardado ✓`, "success");
       els.statLastSku.textContent = created.sku;
       clearForm();
@@ -842,7 +1003,9 @@ function startHeartbeat() {
   sendHeartbeat();
   setInterval(sendHeartbeat, HEARTBEAT_INTERVAL);
   // Recargar productos automáticamente cada 10s para ver cambios de otras PCs
-  setInterval(() => loadProducts(true), PRODUCTS_POLL_INTERVAL);
+  setInterval(() => { if (state.backendOnline) loadProducts(true); }, PRODUCTS_POLL_INTERVAL);
+  // Reconexión automática cada 5s cuando está offline
+  setInterval(reconnectLoop, 5000);
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────

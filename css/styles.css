@@ -6,9 +6,15 @@
 /* ── Base ─────────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
 
-html { font-size: 14px; }
+html, body {
+  height: 100%;
+  overflow: hidden;
+  font-size: 14px;
+}
 
 body {
+  display: flex;
+  flex-direction: column;
   background-color: #f5f3ff;
   color: #1e1b4b;
   -webkit-font-smoothing: antialiased;
@@ -656,6 +662,49 @@ tbody tr.row-new {
   height: 1px;
   background: #ede9fe;
   margin: 2px 0;
+}
+
+/* ── Paginación ───────────────────────────────────────────────────── */
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 12px 16px;
+  border-top: 1px solid #ede9fe;
+  background: #faf5ff;
+  position: sticky;
+  bottom: 0;
+}
+
+.page-btn {
+  background: white;
+  border: 1.5px solid #ddd6fe;
+  color: #7c3aed;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 5px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.page-btn:hover:not(:disabled) {
+  background: #7c3aed;
+  color: white;
+  border-color: #7c3aed;
+}
+.page-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.page-info {
+  font-size: 13px;
+  color: #6d28d9;
+  font-weight: 500;
+}
+.page-total {
+  color: #a78bfa;
+  font-weight: 400;
 }
 
 /* ── Import / Export buttons ──────────────────────────────────────── */
