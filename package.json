@@ -1,7 +1,7 @@
 {
   "name": "fullparty-labels",
   "version": "2.0.0",
-  "description": "Sistema de etiquetas para Full Party - Uruapan, Michoacán",
+  "description": "Sistema de etiquetas para Full Party - Uruapan, Michoacan",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -18,13 +18,11 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "installerLanguages": ["es_MX"],
-      "language": "3082"
+      "allowToChangeInstallationDirectory": true
     },
     "extraResources": [
       {
-        "from": "dist/servidor_etiquetas.exe",
+        "from": "backend/servidor_etiquetas.exe",
         "to": "servidor_etiquetas.exe"
       },
       {
