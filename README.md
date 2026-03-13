@@ -38,7 +38,7 @@ fullparty-etiquetas/
 ## ⚙️ Requisitos previos
 
 ### Python
-- **Python 3.13** (no usar 3.14 — incompatible con PyInstaller)
+- **Python 3.13** — No usar 3.14, es incompatible con PyInstaller
 - Descargar en: https://www.python.org/downloads/release/python-3130/
 
 ### Node.js
@@ -46,7 +46,29 @@ fullparty-etiquetas/
 
 ### Cuenta Supabase
 - Proyecto creado en https://supabase.com
-- La tabla `products` se crea automáticamente al arrancar
+- Las tablas se crean automáticamente al arrancar (ver abajo)
+
+---
+
+## 🗄️ Tablas en Supabase
+
+Antes de arrancar por primera vez, crear estas tablas en el **SQL Editor** de Supabase:
+
+```sql
+CREATE TABLE IF NOT EXISTS products (
+    id         SERIAL PRIMARY KEY,
+    sku        VARCHAR(13) UNIQUE NOT NULL,
+    name       VARCHAR(120) NOT NULL,
+    price      NUMERIC(10,2) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS presence (
+    session_id VARCHAR(36) PRIMARY KEY,
+    ip         VARCHAR(45) NOT NULL,
+    last_seen  TIMESTAMPTZ DEFAULT NOW()
+);
+```
 
 ---
 
@@ -54,14 +76,14 @@ fullparty-etiquetas/
 
 ### 1. Clonar el repositorio
 
-```bash
+```powershell
 git clone https://github.com/riantorres1975/fullparty-etiquetas-supabase.git
 cd fullparty-etiquetas-supabase
 ```
 
 ### 2. Configurar variables de entorno
 
-```bash
+```powershell
 copy .env.example .env
 ```
 
@@ -71,17 +93,16 @@ Editar `.env` con tus credenciales de Supabase:
 DATABASE_URL=postgresql://postgres.XXXXXXXX:TU_PASSWORD@aws-0-us-west-2.pooler.supabase.com:5432/postgres
 ```
 
-> **Nota:** Usar el puerto **5432** con la URL del pooler de Supabase.
-
-### 3. Instalar dependencias Python (usar Python 3.13)
+### 3. Instalar dependencias Python
 
 ```powershell
 py -3.13 -m pip install -r requirements.txt
+py -3.13 -m pip install python-multipart
 ```
 
 ### 4. Instalar dependencias Node.js
 
-```bash
+```powershell
 npm install
 ```
 
@@ -89,16 +110,13 @@ npm install
 
 ## 🏃 Ejecutar en desarrollo
 
-Necesitas **dos terminales**:
-
 **Terminal 1 — Backend:**
 ```powershell
 py -3.13 servidor_etiquetas.py
 ```
-El servidor arranca en `http://127.0.0.1:8000`
 
 **Terminal 2 — Frontend Electron:**
-```bash
+```powershell
 npm start
 ```
 
@@ -108,42 +126,49 @@ npm start
 
 - ✅ **CRUD de productos** — Crear, editar y eliminar con SKU EAN-13 auto-generado
 - ✅ **Impresión de etiquetas** — PDF 62×29mm para Brother QL-800
-- ✅ **Nombre de tienda configurable** — Se puede mostrar u ocultar en cada etiqueta
+- ✅ **Nombre de tienda configurable** — Se muestra u oculta en cada etiqueta
 - ✅ **Precio opcional** — Toggle para imprimir con o sin precio
 - ✅ **Impresión batch** — Seleccionar múltiples productos e imprimir juntos
 - ✅ **Importar/Exportar CSV y Excel** — Para carga masiva de productos
 - ✅ **Búsqueda en tiempo real** — Filtro instantáneo por nombre o SKU
-- ✅ **Usuarios conectados** — Muestra cuántas instancias están activas y sus IPs
-- ✅ **Sincronización en tiempo real** — Todos los cambios se reflejan en Supabase
+- ✅ **Usuarios conectados** — Muestra sesiones activas con IP pública real
+- ✅ **Presencia en Supabase** — Funciona entre PCs fuera de la red local
+- ✅ **Auto-refresh** — Los productos se sincronizan cada 10 segundos
 
 ---
 
 ## 🏗️ Compilar para producción (Windows .exe)
 
-### Paso 1 — Empaquetar el backend con PyInstaller
+### Paso 1 — Limpiar builds anteriores
 
 ```powershell
-py -3.13 -m pip install python-multipart pyinstaller
-
 Remove-Item -Recurse -Force backend -ErrorAction SilentlyContinue
 Remove-Item -Recurse -Force build -ErrorAction SilentlyContinue
 Remove-Item -Force servidor_etiquetas.spec -ErrorAction SilentlyContinue
+```
 
+### Paso 2 — Instalar PyInstaller y dependencias
+
+```powershell
+py -3.13 -m pip install pyinstaller python-multipart
+```
+
+### Paso 3 — Empaquetar el backend
+
+```powershell
 py -3.13 -m PyInstaller --onefile --noconsole --distpath backend --name servidor_etiquetas --collect-all fastapi --collect-all uvicorn --collect-all starlette --collect-all sqlalchemy --collect-all psycopg2 --collect-all reportlab --collect-all dotenv --collect-all pydantic --collect-all pydantic_core --collect-all anyio --collect-all click --collect-all h11 --collect-all multipart servidor_etiquetas.py
 ```
 
-### Paso 2 — Verificar que el exe funciona
-
-Copiar el `.env` a la carpeta backend y probar:
+### Paso 4 — Verificar que el backend funciona
 
 ```powershell
 Copy-Item .env backend\.env
 backend\servidor_etiquetas.exe
 ```
 
-Debe mostrar `Application startup complete.`
+Debe mostrar `Application startup complete.` Si hay error de puerto ocupado es normal, significa que ya hay una instancia corriendo.
 
-### Paso 3 — Generar el instalador
+### Paso 5 — Generar el instalador
 
 ```powershell
 Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue
@@ -161,23 +186,7 @@ El instalador queda en `dist\Full Party Labels Setup 2.0.0.exe`
    ```
    C:\Program Files\Full Party Labels\resources\.env
    ```
-3. Abrir la app — debe conectarse automáticamente a Supabase
-
----
-
-## 🗄️ Base de datos
-
-La tabla `products` se crea automáticamente al iniciar el servidor:
-
-```sql
-CREATE TABLE products (
-    id         SERIAL PRIMARY KEY,
-    sku        VARCHAR(13) UNIQUE NOT NULL,
-    name       VARCHAR(120) NOT NULL,
-    price      NUMERIC(10,2) NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-```
+3. Abrir la app — se conecta automáticamente a Supabase
 
 ---
 
@@ -201,10 +210,10 @@ CREATE TABLE products (
 
 ## ⚠️ Notas importantes
 
-- Usar siempre **Python 3.13** — Python 3.14 es incompatible con PyInstaller y FastAPI
-- El archivo `.env` **nunca se sube a GitHub** — está en `.gitignore`
-- Al instalar en una PC nueva, el `.env` debe copiarse manualmente a `resources\`
-- Si el puerto 8000 está ocupado al probar el exe, cerrar otras instancias primero
+- Usar siempre **Python 3.13** — Python 3.14 rompe PyInstaller y FastAPI
+- El `.env` **nunca se sube a GitHub** — está en `.gitignore`
+- Al instalar en una PC nueva, copiar `.env` manualmente a `resources\`
+- La tabla `presence` en Supabase permite ver usuarios conectados desde cualquier lugar
 
 ---
 
